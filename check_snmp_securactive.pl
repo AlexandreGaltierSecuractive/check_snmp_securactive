@@ -1,13 +1,24 @@
 #!/usr/bin/perl -w
 # nagios: -epn
 ############################## check_snmp_securactive ##############
-my $Version='0.2';
+my $Version='0.3';
 # Date : 2013-01-15
 # Author  : Securactive - PerformanceVison - http://securactive.net
 # Help : http://securactive.net
 # Licence : GPL - http://www.fsf.org/licenses/gpl.txt
 # Contrib : ...
+# Dependencies : Perl, Net::SNMP, Getopt::Long
+# Changelog :
+# 0.1 2012-01-15 : first alpha version
+# 0.2 2012-01-19 : add options for BCN and BCA pattern match
+# 0.3 2012-02-12 : fix options check
+#                  code optimisation
+#                  add no regex parameter
+#                  add match only parameter
+#                  add onlyfaultys service parameter
 # TODO : 
+#
+#
 #################################################################
 #
 # Help : ./check_snmp_securactive.pl -h
@@ -24,7 +35,7 @@ my %REVERSE_ERRORS=reverse %ERRORS;
 my %STATUS=( 1 => 'Ok', 2 => 'Warning', 3 => 'Alert', 4 => 'NA', 5 => 'Nothing', 6 => 'NotEnough' );
 my $RET = 1; #Final Status
 
-# SNMP Datas
+# Securactive SNMP Datas
 
 #BCA OIDs
 my $spvBCAStateTable           = '.1.3.6.1.4.1.36773.3.2.1.1';     
@@ -149,11 +160,7 @@ my @spbBCNLabels = (
 	"ThRrAleAtoB"	,
 	"ThRrAleBtoA"	);
 
-
-
-
 # Globals
-
 
 # Standard options
 my $o_host = 		undef; 	# hostname
@@ -179,56 +186,21 @@ my $o_bca = undef;
 my $o_bcn = undef;
 my $o_insensitive = undef;
 my $o_onlymatch = undef;
+my $o_onlyfaulty = undef;
+
+my @bca_matrix = ();
+my @bcn_matrix = ();
+my $resultat = undef; #Result from snmp get_table
+my $output="";
 
 
-sub edit_status
-{
-	my $_ret = $_[0];
-	if ( $RET < $_ret and $_ret <= 3 )
-	{
-		verb("Old Global  RET = " . $RET . "($STATUS{$RET})"," ");
-		$RET=$_ret;
-		verb("--- New Global RET = " . $RET .  "($STATUS{$RET})");	
-	}
-	else
-	{
-		verb("No change");
-	}
 
-}
-
-
-#Get the last number of oid 
-# 1.2.3.4.5.65.7 => 7
-sub get_oid_index
-{
-	my $_oid = $_[0] ;
-	my ($_return) = $_oid =~ m/.+\.(\d+)$/;
-	return $_return;
-}
-
-#Get the last last number of oid
-# 1.2.3.4.5.65.7 => 65
-sub get_oid_entry
-{
-	my $_oid = $_[0] ;
-	my ($_return) = $_oid =~ m/.+\.(\d+)\.\d+$/;
-	return $_return;
-}
-
-sub p_version { print "check_snmp_int version : $Version\n"; }
+sub p_version { print "check_snmp_securactive version : $Version\n"; }
 
 sub print_usage {
     print "Usage: $0 [-v] -H <host> [-C <snmp_community>] [-2] | (-l login -x passwd [-X pass -L <authp>,<privp>)  [-p <port>] [-i] [-o] [-n <bcn PATERN>] [-a <bca PATERN>] [-r] [-f] [-t <timeout>] -v \n";
 }
 
-
-sub get_error_from_ret
-{
-	my $_ret = $_[0];
-	my %rhash = reverse %ERRORS;
-	return $rhash{($_ret - 1)};
-}
 
 sub isnnum { # Return true if arg is not a number
   my $num = shift;
@@ -265,6 +237,8 @@ sub help {
 	Case insensitive for regex match
 -o, --onlymatch
 	Print only matched names
+    --onlyfaulty
+	Print only faulty services : not OK BCA or BCN
 -a, --bca=NAME
    Name of BCA (htpp, ssh ...).
    This is treated as a regexp : -n http will match BCA http, http intranet, https, ...
@@ -301,6 +275,7 @@ sub check_options {
         'p:i'   => \$o_port,   		'port:i'	=> \$o_port,
         'i'   => \$o_insensitive, 	'insensitive'	=> \$o_insensitive,
         'o'   => \$o_onlymatch, 	'onlymatch'	=> \$o_onlymatch,
+					'onlyfaulty'	=> \$o_onlyfaulty,
         'a:s'   => \$o_bca,   		'bca:s'		=> \$o_bca,
         'n:s'   => \$o_bcn,   		'bcn:s'		=> \$o_bcn,
         'C:s'   => \$o_community,	'community:s'	=> \$o_community,
@@ -331,7 +306,7 @@ sub check_options {
 	if (defined($o_timeout) && (isnnum($o_timeout) || ($o_timeout < 2) || ($o_timeout > 60))) 
 	  { print "Timeout must be >1 and <60 !\n"; print_usage(); exit $ERRORS{"UNKNOWN"}}
 	if (!defined($o_timeout)) {$o_timeout=5;}
-    if ( !defined($o_host) || $o_host eq ""){print "Need to specifie hostname/address\n"; exit $ERRORS{"UNKNOWN"};}
+    if ( !defined($o_host) || $o_host eq ""){print "Need to specifie hostname/address\n"; help ; exit $ERRORS{"UNKNOWN"};}
 
 	
 }
@@ -410,11 +385,51 @@ if (!defined($session)) {
    exit $ERRORS{"UNKNOWN"};
 }
 
-my @bca_matrix = ();
-my @bcn_matrix = ();
-my $resultat = undef; #Result from snmp get_table
-my $output="";
 
+#Securactive Functions 
+
+
+sub get_error_from_ret
+{
+	my $_ret = $_[0];
+	my %rhash = reverse %ERRORS;
+	return $rhash{($_ret - 1)};
+}
+
+sub edit_status
+{
+	my $_ret = $_[0];
+	if ( $RET < $_ret and $_ret <= 3 )
+	{
+		verb("Old Global  RET = " . $RET . "($STATUS{$RET})"," ");
+		$RET=$_ret;
+		verb("--- New Global RET = " . $RET .  "($STATUS{$RET})");	
+	}
+	else
+	{
+		verb("No change");
+	}
+
+}
+
+
+#Get the last number of oid 
+# 1.2.3.4.5.65.7 => 7
+sub get_oid_index
+{
+	my $_oid = $_[0] ;
+	my ($_return) = $_oid =~ m/.+\.(\d+)$/;
+	return $_return;
+}
+
+#Get the last last number of oid
+# 1.2.3.4.5.65.7 => 65
+sub get_oid_entry
+{
+	my $_oid = $_[0] ;
+	my ($_return) = $_oid =~ m/.+\.(\d+)\.\d+$/;
+	return $_return;
+}
 
 sub print_array
 {
@@ -450,7 +465,6 @@ sub print_table_long
 		}
 	}
 	return $_string;
-
 }
 
 sub print_table
@@ -465,18 +479,29 @@ sub print_table
 
 }
 
-
-sub check_bca
+sub check_bca_bcn
 {
-	my $print_title = undef;
+	my $_matrixref = shift;
+	my @_matrix = @{$_matrixref};
+	my $_BCString = shift ;
+	my $_oid = shift ;
+	my $_pattern = shift ;
+	$_pattern="" if (!defined($_pattern)); 
+	my $_status_position = shift ;
+	my $_status = undef;
+	my $_print_title = undef;
+	my $_match = undef;
+	my $_faulty = undef;
+	my $_BCName = undef;
+
 
 	$resultat = undef; #Result from snmp get_table
 	$resultat = $session->get_table(
-	        Baseoid => $spvBCAStateTable
+	        Baseoid => $_oid
 	);
 
 	if (!defined($resultat)) {
-	   $output.="ERROR: BCA table : $session->error\n";
+	   $output.="ERROR: $_BCString table : $session->error\n";
    	   edit_status(2);
 	 }
 	verb("Output lines number : ". scalar(keys %{$resultat}));
@@ -484,73 +509,42 @@ sub check_bca
 	foreach my $uu (keys %{$resultat}) 
 	{
 		verb( "$uu : $$resultat{$uu}");
-		$bca_matrix[get_oid_index($uu)-1][get_oid_entry($uu)-1]=$$resultat{$uu};
+		$_matrix[get_oid_index($uu)-1][get_oid_entry($uu)-1]=$$resultat{$uu};
 	}
 	
-	$o_bca="" if (!defined($o_bca)); 
-	for (my $ii = 0 ; $ii <= $#bca_matrix ; $ii++)
+	for (my $ii = 0 ; $ii <= $#_matrix ; $ii++)
 	{
-		if ((defined($o_insensitive) and $bca_matrix[$ii][0] =~ m/$o_bca/i) or (!defined($o_insensitive) and $bca_matrix[$ii][0] =~ m/$o_bca/))
+		$_status=$_matrix[$ii][$_status_position];
+		$_faulty=($_status>1 and $_status<4);
+		$_BCName=$_matrix[$ii][0];
+		$_match=(defined($o_noreg)
+				?defined($o_insensitive)
+					?(lc($_BCName) eq lc($_pattern))
+					:($_BCName eq $_pattern)
+				:defined($o_insensitive)
+					?($_BCName =~ m/$_pattern/i)
+					:($_BCName =~ m/$_pattern/));
+		if (!( (defined($o_onlymatch) and !$_match) or
+			(defined($o_onlyfaulty) and !$_faulty)
+		))
 		{
-			if (!defined($print_title))
+			if (!defined($_print_title))
 			{
-				$output.="\nBCA Table\n*********\n";
-				$print_title=1;
+				$output.="\n$_BCString Table\n*********\n";
+				$_print_title=1;
 			}
-			$output.=print_array(\@{$bca_matrix[$ii]})."\n" if (defined($o_onlymatch));
-			verb($bca_matrix[$ii][0] . " => status: " . $bca_matrix[$ii][1] , " " );
-			edit_status($bca_matrix[$ii][1]);
+			$output.=print_array(\@{$_matrix[$ii]})."\n";
+			verb($_matrix[$ii][0] . " => status: " . $_matrix[$ii][1] , " " );
+			edit_status($_status);
 		}
 	}
-	$output.=print_table(\@bca_matrix)  if (!defined($o_onlymatch));
-	
+
+#	print "$_BCString Table\n-------\n".print_table_long(\@_matrix,\@spbBCALabels)."\n\n";
 }
-sub check_bcn
-{
-	my $print_title = undef;
 
-	$resultat = undef; #Result from snmp get_table
-	$resultat = $session->get_table(
-	        Baseoid => $spvBCNStateTable
-	);
+check_bca_bcn(\@bca_matrix,"BCA",$spvBCAStateTable,$o_bca,1) if (defined($o_bca) or !defined($o_bcn));
+check_bca_bcn(\@bcn_matrix,"BCN",$spvBCNStateTable,$o_bcn,3) if (defined($o_bcn) or !defined($o_bca));
 
-	if (!defined($resultat)) {
-	   $output.="ERROR: BCN table : $session->error\n";
-	   edit_status(2);
-	 }
-	verb("Output lines number : ". scalar(keys %{$resultat}));
-
-	foreach my $uu (keys %{$resultat}) 
-	{
-		verb( "$uu : $$resultat{$uu}");
-		$bcn_matrix[get_oid_index($uu)-1][get_oid_entry($uu)-1]=$$resultat{$uu};
-	}
-	
-	$o_bcn="" if (!defined($o_bcn)); 
-	for (my $ii = 0 ; $ii <= $#bcn_matrix ; $ii++)
-	{
-		if ((defined($o_insensitive) and $bcn_matrix[$ii][0] =~ m/$o_bcn/i) or (!defined($o_insensitive) and $bcn_matrix[$ii][0] =~ m/$o_bcn/))
-		{
-			if (!defined($print_title))
-			{
-				$output.="\nBCN Table\n*********\n";
-				$print_title=1;
-			}
-			$output.=print_array(\@{$bcn_matrix[$ii]})."\n" if (defined($o_onlymatch));
-			verb($bcn_matrix[$ii][0] . " => status: " . $bcn_matrix[$ii][3] , " " );
-			edit_status($bcn_matrix[$ii][3]);
-		}
-	}
-	$output.=print_table(\@bcn_matrix)  if (!defined($o_onlymatch));
-	
-}
-check_bca if (defined($o_bca));
-check_bcn if (defined($o_bcn));
-if (!defined($o_bca) and !defined($o_bcn))
-{ check_bca ; check_bcn;}
-
-#print "BCA Table\n-------\n".print_table_long(\@bca_matrix,\@spbBCALabels)."\n\n";
-#print "BcN Table\n-------\n".print_table_long(\@bcn_matrix,\@spbBCNLabels)."\n\n";
 
 $output = $STATUS{$RET} . $output;
 print $output;
