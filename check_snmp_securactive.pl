@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 # nagios: -epn
 ############################## check_snmp_securactive ##############
-my $Version='0.3';
+my $Version='0.4';
 # Date : 2013-01-15
 # Author  : Securactive - PerformanceVison - http://securactive.net
 # Help : http://securactive.net
@@ -16,6 +16,7 @@ my $Version='0.3';
 #                  add no regex parameter
 #                  add match only parameter
 #                  add onlyfaultys service parameter
+# 0.4 2012-02-14 : add option to choose BCN A=>B or B=>A
 # TODO : 
 #
 #
@@ -184,6 +185,8 @@ my $o_privpass= undef;		# priv password
 #Securactive Options
 my $o_bca = undef;
 my $o_bcn = undef;
+my $o_bcnatob = undef;
+my $o_bcnbtoa = undef;
 my $o_insensitive = undef;
 my $o_onlymatch = undef;
 my $o_onlyfaulty = undef;
@@ -198,7 +201,7 @@ my $output="";
 sub p_version { print "check_snmp_securactive version : $Version\n"; }
 
 sub print_usage {
-    print "Usage: $0 [-v] -H <host> [-C <snmp_community>] [-2] | (-l login -x passwd [-X pass -L <authp>,<privp>)  [-p <port>] [-i] [-o] [-n <bcn PATERN>] [-a <bca PATERN>] [-r] [-f] [-t <timeout>] -v \n";
+    print "Usage: $0 [-h] [-v] -H <host> [-C <snmp_community>] [-2] | (-l login -x passwd [-X pass -L <authp>,<privp>)  [-p <port>] [-i] [-o] [-n <bcn PATERN>] [-a <bca PATERN>] [-r] [-f] [-t <timeout>]\n";
 }
 
 
@@ -237,7 +240,7 @@ sub help {
 	Case insensitive for regex match
 -o, --onlymatch
 	Print only matched names
-    --onlyfaulty
+--onlyfaulty
 	Print only faulty services : not OK BCA or BCN
 -a, --bca=NAME
    Name of BCA (htpp, ssh ...).
@@ -247,6 +250,10 @@ sub help {
    Name of BCN ("All - /Private/Private_fallback", ...).
    This is treated as a regexp : -n fallback will match all BNC containing "fallback".
    If NAME is "" , will check all bcn
+--bcnatob
+	Check Only BCN Status A => B
+--bcnbtoa
+	Check Only BCN Status B => A
 -r, --noregexp
    Do not use regexp to match NAME
 -f, --perfparse
@@ -276,6 +283,8 @@ sub check_options {
         'i'   => \$o_insensitive, 	'insensitive'	=> \$o_insensitive,
         'o'   => \$o_onlymatch, 	'onlymatch'	=> \$o_onlymatch,
 					'onlyfaulty'	=> \$o_onlyfaulty,
+					'bcnatob'	=> \$o_bcnatob,
+					'bcnbtoa'	=> \$o_bcnbtoa,
         'a:s'   => \$o_bca,   		'bca:s'		=> \$o_bca,
         'n:s'   => \$o_bcn,   		'bcn:s'		=> \$o_bcn,
         'C:s'   => \$o_community,	'community:s'	=> \$o_community,
@@ -308,7 +317,6 @@ sub check_options {
 	if (!defined($o_timeout)) {$o_timeout=5;}
     if ( !defined($o_host) || $o_host eq ""){print "Need to specifie hostname/address\n"; help ; exit $ERRORS{"UNKNOWN"};}
 
-	
 }
     
 ########## MAIN #######
@@ -539,11 +547,18 @@ sub check_bca_bcn
 		}
 	}
 
-#	print "$_BCString Table\n-------\n".print_table_long(\@_matrix,\@spbBCALabels)."\n\n";
+#	print "$_BCString Table\n-------\n".print_table_long(\@_matrix,\@spbBCNLabels)."\n\n";
 }
 
 check_bca_bcn(\@bca_matrix,"BCA",$spvBCAStateTable,$o_bca,1) if (defined($o_bca) or !defined($o_bcn));
-check_bca_bcn(\@bcn_matrix,"BCN",$spvBCNStateTable,$o_bcn,3) if (defined($o_bcn) or !defined($o_bca));
+if (defined($o_bcn) or !defined($o_bca))
+{
+	my $_index=(defined($o_bcnatob)?4:
+		 	defined($o_bcnbtoa)?5:3);
+	$_index=3 if (defined($o_bcnatob) and defined($o_bcnbtoa));
+	check_bca_bcn(\@bcn_matrix,"BCN",$spvBCNStateTable,$o_bcn,$_index);
+}
+#check_bca_bcn(\@bcn_matrix,"BCN",$spvBCNStateTable,$o_bcn,3) if (defined($o_bcn) or !defined($o_bca));
 
 
 $output = $STATUS{$RET} . $output;
