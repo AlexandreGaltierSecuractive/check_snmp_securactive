@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 # nagios: -epn
 ############################## check_snmp_securactive ##############
 my $Version='0.4';
