@@ -17,7 +17,7 @@ my $Version='0.4';
 #                  add match only parameter
 #                  add onlyfaultys service parameter
 # 0.4 2012-02-14 : add option to choose BCN A=>B or B=>A
-# TODO : 
+# TODO :
 #
 #
 #################################################################
@@ -39,7 +39,7 @@ my $RET = 1; #Final Status
 # Securactive SNMP Datas
 
 #BCA OIDs
-my $spvBCAStateTable           = '.1.3.6.1.4.1.36773.3.2.1.1';     
+my $spvBCAStateTable           = '.1.3.6.1.4.1.36773.3.2.1.1';
 
 
 #Base OID : <BaseOID.index>
@@ -166,7 +166,7 @@ my @spbBCNLabels = (
 # Standard options
 my $o_host = 		undef; 	# hostname
 my $o_port = 		161; 	# port
-my $o_help=		undef; 	# wan't some help ?
+my $o_help=		undef; 	# want some help ?
 my $o_verb=		undef;	# verbose mode
 my $o_version=		undef;	# print version
 my $o_noreg=		undef;	# Do not use Regexp for name
@@ -174,7 +174,7 @@ my $o_noreg=		undef;	# Do not use Regexp for name
 my $o_timeout=  undef; 		# Timeout (Default 5)
 # Login options specific
 my $o_community = 'public'; 	# community
-my $o_version2	= undef;	#use snmp v2c
+my $o_version2	= undef;	# use snmp v2c
 my $o_login=	undef;		# Login for snmpv3
 my $o_passwd=	undef;		# Pass for snmpv3
 my $v3protocols=undef;	# V3 protocol list.
@@ -193,7 +193,6 @@ my $o_onlyfaulty = undef;
 
 my @bca_matrix = ();
 my @bcn_matrix = ();
-my $resultat = undef; #Result from snmp get_table
 my $output="";
 
 
@@ -205,10 +204,8 @@ sub print_usage {
 }
 
 
-sub isnnum { # Return true if arg is not a number
-  my $num = shift;
-  if ( $num =~ /^(\d+\.?\d*)|(^\.\d+)$/ ) { return 0 ;}
-  return 1;
+sub isnum { # Return true if arg is a number
+  return $_[0] =~ /^(\d+\.?\d*|\.\d+)$/
 }
 
 sub help {
@@ -226,14 +223,14 @@ sub help {
    community name for the host's SNMP agent
    default public
 -l, --login=LOGIN ; -x, --passwd=PASSWD, -2, --v2c
-   Login and auth password for snmpv3 authentication 
-   If no priv password exists, implies AuthNoPriv 
+   Login and auth password for snmpv3 authentication
+   If no priv password exists, implies AuthNoPriv
 -2, use snmp v2c
 -X, --privpass=PASSWD
    Priv password for snmpv3 (AuthPriv protocol)
 -L, --protocols=<authproto>,<privproto>
    <authproto> : Authentication protocol (md5|sha : default md5)
-   <privproto> : Priv protocole (des|aes : default des) 
+   <privproto> : Priv protocole (des|aes : default des)
 -P, --port=PORT
    SNMP port (Default 161)
 -i, --insensitive
@@ -259,18 +256,18 @@ sub help {
 -f, --perfparse
    Perfparse compatible output.
 -t, --timeout=INTEGER
-   timeout for SNMP in seconds (Default: 5)   
+   timeout for SNMP in seconds (Default: 5)
 -V, --version
    prints version number
 EOT
 }
 
-#u For verbose output
-sub verb 
-{ 
+# For verbose output
+sub verb
+{
 	my ( $_out , $_endline ) = @_;
 	$_endline="\n" unless ($_endline);
-	print $_out,$_endline if defined($o_verb) ; 
+	print $_out,$_endline if defined($o_verb) ;
 }
 
 sub check_options {
@@ -292,7 +289,7 @@ sub check_options {
 	'l:s'	=> \$o_login,		'login:s'	=> \$o_login,
 	'x:s'	=> \$o_passwd,		'passwd:s'	=> \$o_passwd,
 	'X:s'	=> \$o_privpass,	'privpass:s'	=> \$o_privpass,
-	'L:s'	=> \$v3protocols,	'protocols:s'	=> \$v3protocols,   
+	'L:s'	=> \$v3protocols,	'protocols:s'	=> \$v3protocols,
         't:i'   => \$o_timeout,    	'timeout:i'	=> \$o_timeout,
 	'r'	=> \$o_noreg,		'noregexp'	=> \$o_noreg,
 	'V'	=> \$o_version,		'version'	=> \$o_version,
@@ -312,18 +309,18 @@ sub check_options {
 	  if ((defined ($v3proto[1])) && (!defined($o_privpass))) {
 	    print "Put snmp V3 priv login info with priv protocols!\n"; print_usage(); exit $ERRORS{"UNKNOWN"}}
 	}
-	if (defined($o_timeout) && (isnnum($o_timeout) || ($o_timeout < 2) || ($o_timeout > 60))) 
+	if (defined($o_timeout) && (!isnum($o_timeout) || ($o_timeout < 2) || ($o_timeout > 60)))
 	  { print "Timeout must be >1 and <60 !\n"; print_usage(); exit $ERRORS{"UNKNOWN"}}
 	if (!defined($o_timeout)) {$o_timeout=5;}
     if ( !defined($o_host) || $o_host eq ""){print "Need to specifie hostname/address\n"; help ; exit $ERRORS{"UNKNOWN"};}
 
 }
-    
+
 ########## MAIN #######
 
 check_options();
 
-# Check gobal timeout if snmp screws up
+# Check global timeout if snmp screws up
 if (defined($TIMEOUT)) {
   verb("Alarm at $TIMEOUT + 5");
   alarm($TIMEOUT+5);
@@ -351,7 +348,7 @@ if ( defined($o_login) && defined($o_passwd)) {
       -authpassword	=> $o_passwd,
       -authprotocol	=> $o_authproto,
       -timeout          => $o_timeout
-    );  
+    );
   } else {
     verb("SNMPv3 AuthPriv login : $o_login, $o_authproto, $o_privproto");
     ($session, $error) = Net::SNMP->session(
@@ -394,7 +391,7 @@ if (!defined($session)) {
 }
 
 
-#Securactive Functions 
+#Securactive Functions
 
 
 sub get_error_from_ret
@@ -421,41 +418,37 @@ sub edit_status
 }
 
 
-#Get the last number of oid 
+#Get the last number of oid
 # 1.2.3.4.5.65.7 => 7
 sub get_oid_index
 {
-	my $_oid = $_[0] ;
-	my ($_return) = $_oid =~ m/.+\.(\d+)$/;
-	return $_return;
+	$_[0] =~ m/.+\.(\d+)$/;
+	return $1;
 }
 
-#Get the last last number of oid
+#Get the penultimate number of oid
 # 1.2.3.4.5.65.7 => 65
 sub get_oid_entry
 {
-	my $_oid = $_[0] ;
-	my ($_return) = $_oid =~ m/.+\.(\d+)\.\d+$/;
-	return $_return;
+	$_[0] =~ m/.+\.(\d+)\.\d+$/;
+	return $1
 }
 
-sub print_array
+sub array_repr
 {
-	my $_string="";
-	my $_arrayref = shift ;
-	my @_array = @{$_arrayref};
-	for (my $x = 0; $x <= $#_array; $x++) {
-			$_string .=  $_array[$x] . "\t"; 
+	my $_aref = $_[0] ;
+	my $_string;
+	for (@{$_aref}) {
+			$_string .=  $_ . "\t";
 	}
 	return $_string;
-
 }
 
-sub print_table_long
+# unused
+sub table_long_repr
 {
-	my $_string="";
-	my $_matrixref = shift;
-	my $_labelref  = shift;
+	my $_string;
+	my ($_matrixref, $_labelref) = @_;
 	my @_label  = @{$_labelref};
 	my @_matrix = @{$_matrixref};
 	if ($#_matrix >= 0)
@@ -475,13 +468,14 @@ sub print_table_long
 	return $_string;
 }
 
-sub print_table
+# unused
+sub table_repr
 {
-	my $_string="";
-	my $_matrixref = shift ;
+	my $_matrixref = $_[0] ;
+	my $_string;
 	my @_matrix = @{$_matrixref};
 	for (my $y = 0; $y <= $#_matrix; $y++) {
-		$_string.=print_array(\@{$_matrix[$y]}) . "\n";
+		$_string.=array_repr(\@{$_matrix[$y]}) . "\n";
 	}
 	return $_string;
 
@@ -489,35 +483,30 @@ sub print_table
 
 sub check_bca_bcn
 {
-	my $_matrixref = shift;
+	my ($_matrixref, $_BCString, $_oid, $_pattern, $_status_position) = @_ ;
 	my @_matrix = @{$_matrixref};
-	my $_BCString = shift ;
-	my $_oid = shift ;
-	my $_pattern = shift ;
-	$_pattern="" if (!defined($_pattern)); 
-	my $_status_position = shift ;
+	$_pattern = "" if (!defined($_pattern));
 	my $_status = undef;
-	my $_print_title = undef;
+	my $_title_printed = 0;
 	my $_match = undef;
 	my $_faulty = undef;
 	my $_BCName = undef;
 
 
-	$resultat = undef; #Result from snmp get_table
-	$resultat = $session->get_table(
+	my $result = $session->get_table(
 	        Baseoid => $_oid
 	);
 
-	if (!defined($resultat)) {
+	if (!defined($result)) {
 	   $output.="ERROR: $_BCString table : $session->error\n";
    	   edit_status(2);
-	 }
-	verb("Output lines number : ". scalar(keys %{$resultat}));
+	}
+	verb("Output lines number : ". scalar(keys %{$result}));
 
-	foreach my $uu (keys %{$resultat}) 
+	foreach my $uu (keys %{$result})
 	{
-		verb( "$uu : $$resultat{$uu}");
-		$_matrix[get_oid_index($uu)-1][get_oid_entry($uu)-1]=$$resultat{$uu};
+		verb( "$uu : $$result{$uu}");
+		$_matrix[get_oid_index($uu)-1][get_oid_entry($uu)-1] = $$result{$uu};
 	}
 	
 	for (my $ii = 0 ; $ii <= $#_matrix ; $ii++)
@@ -536,18 +525,18 @@ sub check_bca_bcn
 			(defined($o_onlyfaulty) and !$_faulty)
 		))
 		{
-			if (!defined($_print_title))
+			if (!$_title_printed)
 			{
 				$output.="\n$_BCString Table\n*********\n";
-				$_print_title=1;
+				$_title_printed=1;
 			}
-			$output.=print_array(\@{$_matrix[$ii]})."\n";
+			$output.=array_repr(\@{$_matrix[$ii]})."\n";
 			verb($_matrix[$ii][0] . " => status: " . $_matrix[$ii][1] , " " );
 			edit_status($_status);
 		}
 	}
 
-#	print "$_BCString Table\n-------\n".print_table_long(\@_matrix,\@spbBCNLabels)."\n\n";
+#	print "$_BCString Table\n-------\n".table_long_repr(\@_matrix,\@spbBCNLabels)."\n\n";
 }
 
 check_bca_bcn(\@bca_matrix,"BCA",$spvBCAStateTable,$o_bca,1) if (defined($o_bca) or !defined($o_bcn));
